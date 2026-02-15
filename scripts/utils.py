@@ -128,22 +128,41 @@ def sanitize_filename(filename: str, max_length: int = 100) -> str:
     return filename
 
 
+def _get_output_base_from_env() -> Path:
+    """从 .env 读取 OUTPUT_DIR，未设置时默认当前目录下的 .output。"""
+    try:
+        from dotenv import load_dotenv
+        load_dotenv(Path.cwd() / ".env")
+    except ImportError:
+        pass
+    raw = os.environ.get("OUTPUT_DIR", "./.output")
+    path = Path(raw).expanduser()
+    if not path.is_absolute():
+        path = (Path.cwd() / path).resolve()
+    return path
+
+
+def get_output_base_dir() -> Path:
+    """从 .env 读取 OUTPUT_DIR 并返回解析后的绝对路径，供下载/转写等默认输出目录使用。"""
+    return _get_output_base_from_env()
+
+
 def create_output_dir(base_dir: str = None) -> Path:
     """
     创建输出目录（带时间戳）
 
     Args:
-        base_dir: 基础目录，默认为当前工作目录下的 youtube-clips
+        base_dir: 基础目录；为 None 时从 .env 的 OUTPUT_DIR 读取，若未配置则用当前目录下的 .output
 
     Returns:
         Path: 输出目录路径
 
     Examples:
         >>> create_output_dir()
-        PosixPath('/path/to/current/dir/youtube-clips/20260121_143022')
+        PosixPath('/path/to/current/dir/.output/20260121_143022')
     """
     if base_dir is None:
-        base_dir = Path.cwd() / "youtube-clips"
+        base_dir = _get_output_base_from_env()
     else:
         base_dir = Path(base_dir)
 

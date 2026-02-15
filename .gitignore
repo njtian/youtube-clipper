@@ -30,6 +30,7 @@ Thumbs.db
 Desktop.ini
 
 # Outputs
+.output/
 youtube-clips/
 outputs/
 downloads/

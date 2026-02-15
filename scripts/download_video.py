@@ -22,7 +22,8 @@ from utils import (
     sanitize_filename,
     format_file_size,
     get_video_duration_display,
-    ensure_directory
+    ensure_directory,
+    get_output_base_dir,
 )
 
 
@@ -32,7 +33,7 @@ def download_video(url: str, output_dir: str = None) -> dict:
 
     Args:
         url: YouTube URL
-        output_dir: 输出目录，默认为当前目录
+        output_dir: 输出目录，默认为 .env 中 OUTPUT_DIR（未配置则为当前目录下的 .output）
 
     Returns:
         dict: {
@@ -51,9 +52,9 @@ def download_video(url: str, output_dir: str = None) -> dict:
     if not validate_url(url):
         raise ValueError(f"Invalid YouTube URL: {url}")
 
-    # 设置输出目录
+    # 设置输出目录：未指定时使用 .env 的 OUTPUT_DIR
     if output_dir is None:
-        output_dir = Path.cwd()
+        output_dir = get_output_base_dir()
     else:
         output_dir = Path(output_dir)
 

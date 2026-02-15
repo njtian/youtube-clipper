@@ -19,11 +19,23 @@ allowed-tools:
 
 你将按照以下 6 个阶段执行 YouTube 视频剪辑任务：
 
-### 阶段 1: 环境检测
+### 阶段 1: 环境检测与配置
 
-**目标**: 确保所有必需工具和依赖都已安装
+**目标**: 确保配置存在，且所有必需工具和依赖都已安装
 
-1. 检测 yt-dlp 是否可用
+1. **检查 .env 配置文件**
+   - 在 youtube-clipper 目录下检查是否存在 `.env` 文件
+   ```bash
+   cd <youtube-clipper 目录>
+   test -f .env && echo "OK" || echo "MISSING"
+   ```
+   - **若不存在**：提示用户进行配置：
+     - 复制 `cp .env.example .env`
+     - 编辑 `.env`，至少确认/填写 `OUTPUT_DIR`（生成文件的目录，默认 `./.output`）
+     - 其他可选项见 `.env.example` 内说明
+   - 必须存在 `.env` 后才能继续后续阶段
+
+2. 检测 yt-dlp 是否可用
    ```bash
    yt-dlp --version
    ```
@@ -54,6 +66,13 @@ allowed-tools:
   ```
 - Python 依赖缺失: 提示 `pip install pysrt python-dotenv`
 
+4. **（可选）无字幕转写**：若 `.env` 中 `WHISPER_ENABLED=true` 且 `WHISPER_MODE=local`，可检测 faster-whisper 是否可用（仅无字幕时会用到）：
+   ```bash
+   python3 -c "import faster_whisper; print('✅ faster-whisper available')"
+   ```
+   - 若未安装：提示 `pip install faster-whisper`
+   - 若使用远程转写（`WHISPER_MODE=remote`），则确保 `WHISPER_API_URL` 可访问即可，无需本地安装
+
 **注意**:
 - 标准 Homebrew FFmpeg 不包含 libass，无法烧录字幕
 - ffmpeg-full 路径: `/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg` (Apple Silicon)
@@ -67,26 +86,36 @@ allowed-tools:
 
 1. 询问用户 YouTube URL
 
-2. 调用 download_video.py 脚本
+2. 调用 download_video.py 脚本（不传输出目录时，使用 .env 的 `OUTPUT_DIR`）
    ```bash
-   cd ~/.claude/skills/youtube-clipper
+   cd <youtube-clipper 目录>
    python3 scripts/download_video.py <youtube_url>
    ```
+   若需指定目录：`python3 scripts/download_video.py <youtube_url> <输出目录>`
 
 3. 脚本会：
    - 下载视频（最高 1080p，mp4 格式）
-   - 下载英文字幕（VTT 格式，自动字幕作为备选）
+   - 下载英文字幕（VTT 格式，优先人工字幕，无则使用 YouTube 自动字幕）
    - 输出文件路径和视频信息
 
-4. 向用户展示：
+4. **若未下载到字幕**（`subtitle_path` 为空）：
+   - 使用 faster-whisper 从音频生成字幕，根据 `.env` 配置（默认本地 `faster-whisper-small`）。不传输出路径时，VTT 写入 `.env` 的 `OUTPUT_DIR`：
+   ```bash
+   python3 scripts/transcribe_audio.py <视频路径>
+   ```
+   - 脚本会从视频提取音频并转写，生成 `<id>.en.vtt`，与有字幕时的命名一致，后续阶段无需区别对待。
+   - 需已安装：本地模式 `pip install faster-whisper`，远程模式需可访问的转写 API（见下方「无字幕时：faster-whisper」配置）。
+
+5. 向用户展示：
    - 视频标题
    - 视频时长
    - 文件大小
    - 下载路径
+   - 字幕来源（下载所得 / 本地或远程 Whisper 生成）
 
-**输出**:
+**输出**（默认均在 `.env` 的 `OUTPUT_DIR` 下）:
 - 视频文件: `<id>.mp4`（使用视频 ID 命名，避免特殊字符问题）
-- 字幕文件: `<id>.en.vtt`
+- 字幕文件: `<id>.en.vtt`（来自 YouTube 或由 faster-whisper 生成）
 
 ---
 
@@ -236,11 +265,18 @@ python3 scripts/generate_summary.py <chapter_info>
 
 **目标**: 组织输出文件并展示给用户
 
-1. 创建输出目录
+1. 获取并创建输出目录
+   - 从 `.env` 读取 `OUTPUT_DIR` 作为生成文件的基础目录（未设置时默认 `./.output`）
+   - 在 youtube-clipper 目录下运行以下命令获取实际输出基础路径：
+   ```bash
+   cd <youtube-clipper 目录>
+   python3 scripts/get_output_dir.py
    ```
-   ./youtube-clips/<日期时间>/
+   - 在该路径下创建带时间戳的子目录作为本次输出目录：
    ```
-   输出目录位于当前工作目录下
+   <OUTPUT_DIR>/<日期时间>/
+   ```
+   例如若 `.env` 中 `OUTPUT_DIR=./.output`，则输出目录为 `./.output/20260121_143022/`
 
 2. 组织文件结构：
    ```
@@ -259,7 +295,7 @@ python3 scripts/generate_summary.py <chapter_info>
    ```
    ✨ 处理完成！
 
-   📁 输出目录: ./youtube-clips/20260121_143022/
+   📁 输出目录: <OUTPUT_DIR>/20260121_143022/   # 由 .env 中 OUTPUT_DIR 决定
 
    文件列表:
      🎬 AGI_指数曲线_双语硬字幕.mp4 (14 MB)
@@ -267,7 +303,7 @@ python3 scripts/generate_summary.py <chapter_info>
      📝 AGI_指数曲线_总结.md (3.2 KB)
 
    快速预览:
-   open ./youtube-clips/20260121_143022/AGI_指数曲线_双语硬字幕.mp4
+   open <OUTPUT_DIR>/20260121_143022/AGI_指数曲线_双语硬字幕.mp4
    ```
 
 4. 询问是否继续剪辑其他章节
@@ -313,6 +349,10 @@ python3 scripts/generate_summary.py <chapter_info>
 - 标准: `/opt/homebrew/bin/ffmpeg`
 - ffmpeg-full: `/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg` (Apple Silicon)
 
+### 5. 字幕获取与无字幕转写（faster-whisper）
+
+字幕来源：优先 YouTube 人工/自动字幕；若无则调用 `transcribe_audio.py` 用 faster-whisper 从音频生成 VTT（默认本地 small，可 `.env` 配远程）。详见 [references/subtitle-and-whisper.md](references/subtitle-and-whisper.md)；远程 ASR 服务 API 规范见 [references/whisper-api.md](references/whisper-api.md)。
+
 ---
 
 ## 错误处理
@@ -320,11 +360,11 @@ python3 scripts/generate_summary.py <chapter_info>
 ### 环境问题
 - 缺少工具 → 提示安装命令
 - FFmpeg 无 libass → 引导安装 ffmpeg-full
-- Python 依赖缺失 → 提示 pip install
+- Python 依赖缺失 → 提示 pip install（含 `faster-whisper` 若使用无字幕转写）
 
 ### 下载问题
 - 无效 URL → 提示检查 URL 格式
-- 字幕缺失 → 尝试自动字幕
+- 字幕缺失 → 先尝试 YouTube 自动字幕；若仍无则调用 `transcribe_audio.py`（需配置 `.env` 中 `WHISPER_*`，默认本地 faster-whisper-small）
 - 网络错误 → 提示重试
 
 ### 处理问题
